@@ -12,25 +12,24 @@ author: olblak
 
 = A kubernetes journey on Azure
 
-As the migration from current infrastructure to an Azure ecosystem is ongoing. +
-I would like to share one of the biggest concerns we had about orchestrating container infrastructure.
+With the ongoing migration to an Azure ecosystem, I would like to share my thoughts about one of the biggest concern we faced: orchestrating container infrastructure.
 
-What the workflow from dev to prod would look like?
+What would the workflow from dev to prod look like?
 
-Before going deeper, we knew that following subjects were very important.
+Before going deeper in the workflow's challenges, we knew, from the start, that following subjects were very important.
 
 Git:: 
-  We found mandatory to keep tracks all changes in a git repository (including secrets)
+  We found it mandatory to keep track of all the infrastructure changes in a Git repository (including secrets)
   in order to facilitate reviewing, validation, rollback,... 
 
 Tests::
-  Jenkins infra contributors are distributed and spread on different timezone
-  That means that getting feedback can take time so we rely a lot on tests before any changes +
+  Jenkins infra contributors are geographicaly distributed and on different timezone.
+  Getting feedback can take time. So we relied a lot on tests before any changes +
  
 Automation::
-  Because the person who submit a change is not necessary the one who will deploy it.
-  And also because repetitive tasks are error prone and a waste of time +
-  All steps must be automated and stay as simple as possible.
+  The change submitter is not necessarly the person who will deploy it.
+  Repetitive tasks are error prone and a waste of time. +
+  For these reasons, all steps must be automated and stay as simple as possible.
 
 A generic workflow should like look this 
 
@@ -49,11 +48,11 @@ A generic workflow should like look this
 
 We identified two main approaches:
 
-* Jenkins Way: Jenkins is triggered by a git commit, runs tests and after validation, Jenkins deploys changes into production.
+* The Jenkins Way: Jenkins is triggered by a git commit, runs the tests and after validation, Jenkins deploys changes into production.
 
-* Puppet way: Jenkins is triggered by a git commit, runs tests and after validation, triggers puppet to deploys into production.
+* The Puppet way: Jenkins is triggered by a git commit, runs the tests and after validation, it triggers puppet to deploys into production.
 
-Let's go discuss about those two approaches.
+Let's discuss these two approaches in details.
 
 == Jenkins way
 
@@ -68,10 +67,10 @@ Let's go discuss about those two approaches.
 ----
 
 In this approach, Jenkins is used to test, validate and deploy our Kubernetes configuration files.  +
-Kubectl can be run on a directory and is idempotent which mean that we can run it as often as we want, result will not change. +
-Theoretically, it's the simplest way as the only thing needed is to run 'kubectl' command each time Jenkins detect changes.
+Kubectl can be run on a directory and is idempotent. This means that we can run it as often as we want: the result will not change. +
+Theoretically, it's the simplest way. The only thing needed is to run 'kubectl' command each time Jenkins detects changes.
 
-Following Jenkinsfile give an example about this workflow.
+The following Jenkinsfile gives an example of this workflow.
 
 .Jenkinsfile
 ----
@@ -97,13 +96,13 @@ Following Jenkinsfile give an example about this workflow.
   }
 ----
 
-As the devil is in the detail, it was not as easy as it look like.
+As the devil is in the details, it was not as easy as it looked at first sight.
 We quickly faced several issues.
 
-===== Order matter
+===== Order matters
 
 Some resources needed to be deployed before others. +
-A workaround was to use numbers for file name but that means adding logic
+A workaround was to use numbers as file names. But this adds extra logic
 at file name level.
   
   Ex:
@@ -112,23 +111,23 @@ at file name level.
 
 ===== Portability
 
-Deployment's environment needed to be same between development machines and Jenkins host. +
+The deployment environments needed to be the same across development machines and Jenkins host. +
 
-Even if it's a well know challenge, it was not easy to tackled. +
-The more the project grew, the more our scripts needed additional tools (Make,Bats,jq,gpg,...). +
-The more tools we used and the issues appeared because of different versions used.
+Even if it's a well known challenge, it was not easy to achieve. +
+The more the project grew, the more our scripts needed additional tools (Make, Bats, jq, gpg, ...). +
+The more tools we used, the more issues appeared because of the different versions used.
 
-Another challenge that emerged when dealing with different environments was, howto manage environment's specific configurations (dev,prod,...)
+Another challenge that emerged when dealing with different environments was, how to manage environment's specific configurations (dev, prod, ...)
 
-Is it better to define different configuration files per environment which mean code duplications or to use file templates which require more tools (sed,jinja2,erb) and more work
-but less codes to write and maintain?
+Is it better to define different configuration files per environment? But this means code duplications or using file templates that require more tools (sed, jinja2, erb). And more work.
+But less code to write and maintain.
 
-There isn't a golden rule and the answer is probably in between
+There isn't a golden rule and the answer is probably in between.
 
-In any case, the good thing is that Jenkinsfile provides an easy way to execute tasks from a docker image. +
-Which can contained all our environment or using different docker image per steps +
+In any case, the good news is that Jenkinsfile provides an easy way to execute tasks from a docker image. +
+Which image can contain all our environment. We can even use different docker images for each step. +
 
-In following example, I use 'my_env' docker image that contain all tools needed to test, validate and deploy changes.
+In the following example, I use the `my_env` docker image. It contains all the tools needed to test, validate and deploy changes.
 
 .Jenkinsfile
 ----
@@ -176,38 +175,40 @@ pipeline{
 
 ===== Secret credentials
 
-Big subject that cover all concerns and very hard to fulfill +
-For obvious reasons, we couldn't publish publicly credentials used within infra project. +
-On the order side we need to keep tracks and share them especially with the jenkins node that will have to deploy our cluster. +
-Which mean that we needed a way to encrypt or decrypt those credentials depending on permissions, environments,...
+// "publish publicly"... But don't have a better idea.
+
+Big subject that covers many concerns and is very hard to fulfill +
+For obvious reasons, we couldn't publish publicly the credentials used within the infra project. +
+On the order side, we needed to keep track and share them. Particulary for the jenkins node that deploys our cluster. +
+This means that we needed a way to encrypt or decrypt those credentials depending on permissions, environments,...
 We analyzed two different approaches to handle this
 
-  1. Storing secrets in a key management tool like https://azure.microsoft.com/en-us/services/key-vault/[Key Vault] or https://www.vaultproject.io/[Vault] and use them like a kubernetes secret kind resource. +
-    -> Unfortunately, it's not yet integrated within Kubernetes but we may come back to it later.
+  1. Storing secrets in a key management tool like https://azure.microsoft.com/en-us/services/key-vault/[Key Vault] or https://www.vaultproject.io/[Vault] and use them like a kubernetes "secret" type of resource. +
+    -> Unfortunately, these tools are not yet integrated in Kubernetes. But we may come back to this option later.
     https://github.com/kubernetes/kubernetes/issues/10439[Kubernetes-HashicorpVault]
 
-  2. Publishing and using a public gpg key.
-     This means that everybody can encrypt credentials for infrastructure project but only the owner of the private key can decrypt credentials. +
+  2. Publishing and encrypting using a public gpg key.
+     This means that everybody can encrypt credentials for the infrastructure project but only the owner of the private key can decrypt credentials. +
      This solution imply
       * Scripting, as secrets need to be decrypted at deployment time.
-      * Templates, as secrets value will change depending on the environment
-     -> One Jenkins node should have the private key to unencrypt secrets associated to it environment.
+      * Templates, as secrets value will change depending on the environment.
+     -> Each Jenkins node should only have the private key to decrypt secrets associated to its environment.
 
 ===== Scripting
 
-Finally it was hard to work without it. +
-Our initial Jenkinsfile with only one kubectl command to run became a bunch of scripts.
-There are so many situations where additional steps where required
+Finally, it was hard to work without it. +
+Our initial Jenkinsfile, with only one `kubectl` command to run, became a bunch of scripts.
+There were so many situations requiring additional steps.
 
 * Resources needed to be updated only in some situations
 * Secrets needed to be encrypted/decrypted
 * Tests needed to be run.
 * ...
 
-Finally the amount of scripts used to deploy kubernetes resources started growing a lot
-And we started questioning our self, are we not reinventing the wheel?
+At the end, the amount of scripts used to deploy the kubernetes resources started to grow a lot.
+And we started questioning ourself: "Aren't we reinventing the wheel?"
 
-== Puppet way
+== The Puppet way
 
 .Workflow 
 ----
@@ -220,7 +221,7 @@ And we started questioning our self, are we not reinventing the wheel?
 ----
 
 Puppet is used to template and deploy all kubernetes configurations files needed to orchestrate our cluster in a controlled workspace.
-It also used to automate basic operation like 'apply' or 'remove' resources based on file changed.
+It is also used to automate basic operations like 'apply' or 'remove' resources based on file changed.
 
 ----
 ______________________
@@ -253,41 +254,39 @@ ______________________
     
 ----
 
-The main benefit of this approach, is to let puppet managing environment and run common tasks. 
-And if needed we still have a place where we can go to run uncommon operations.
+The main benefit of this approach, is to let puppet manage the environment and run common tasks. 
+And if needed, we still have a place where we can go to run uncommon operations.
 
 -> https://github.com/jenkins-infra/jenkins-infra/tree/staging/dist/profile/manifests/kubernetes[Examples],
 
 Let's compare the puppet approach with a full jenkins approach
 
 ===== Order matter
-With puppet approach, it become easy to define priorities as
-puppet provide relationship meta parameters and the function 'require' 
+With the puppet approach, it becomes easy to define priorities as
+puppet provides relationship meta parameters and the function 'require' 
 -> https://docs.puppet.com/puppet/4.9/lang_relationships.html[Puppet-relationships]
 
-Remark: At the moment Jenkins puppet code only apply configuration when it detect files’ changes. +
-But it would be better to compare local files with cluster configurations in order to trigger updates if needed
+Remark: Currently, Jenkins puppet code only applies configuration when it detects files’ changes. +
+But it would be better to compare local files with the cluster configurations in order to trigger required updates.
 We didn't find a good way to do it yet.
 
 ===== Portability
-As puppet is used to configure working environments. 
-It become easier to be sure that all tools are present and correctly configured.
-It's also easier to replicate environment and run tests on them with tools like http://rspec-puppet.com/[Rpec-puppet], http://serverspec.org/[Serverspec] or https://www.vagrantup.com/[Vagrant]
+As puppet is used to configure working environments, it becomes easier to be sure that all tools are present and correctly configured.
+It's also easier to replicate environments and run tests on them with tools like http://rspec-puppet.com/[Rpec-puppet], http://serverspec.org/[Serverspec] or https://www.vagrantup.com/[Vagrant]
 
 
 ===== Secret credentials
-As we were already using encrypted Hiera with puppet
-We decided to continue to use it.
+As we were already using encrypted Hiera with puppet, we decided to continue to use it.
 
 ===== Scripting
 Of course puppet DSL is used. +
-And even if it seems harder at the beginning
+And even if it seems harder at the beginning, 
 Puppet simplifies a lot the management of kubernetes configurations files.
 
 == Conclusion
 It was much easier to bootstrap the project with a full CI workflow as long as the kubernetes project stays basic. +
 
-But as soon as the project grew up and we started deploying different applications per environment, with different configurations,... +
+But as soon as the project grew and we started deploying different applications per environment, with different configurations,... +
 It became easier to delegate kubernetes configuration files management to puppet.
 
 
